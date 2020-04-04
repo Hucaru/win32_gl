@@ -30,3 +30,13 @@
 *.exe
 *.out
 *.app
+
+# Compiled Misc
+*.ilk
+*.pdb
+
+# Debugger
+.vs
+
+# Editor
+.vscode

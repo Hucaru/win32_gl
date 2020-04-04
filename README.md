@@ -1,2 +1,5 @@
 # win32_gl
-Win32 OpenGL Helper
+Header only library for opening an opengl context and window on win32
+
+## Usage
+See example folder for how the 
