@@ -16,7 +16,7 @@ public:
     window(char *class_name, window_proc callback);
     ~window();
 
-    bool create_window(const int px, const int py, const int width, const int height, const char *window_title);
+    bool create_window(const int px, const int py, const int width, const int height, const char *window_title, void *state);
     void resize_window(int width, int height);
     bool init_opengl(const int major, const int minor);
     bool set_window_title(const char *window_title);
@@ -46,7 +46,7 @@ window::~window()
     DestroyWindow(h_wnd);
 }
 
-bool window::create_window(const int px, const int py, const int width, const int height, const char *window_title)
+bool window::create_window(const int px, const int py, const int width, const int height, const char *window_title, void *state = nullptr)
 {
     // Back on 16 bit windows HMODULE and HINSTANCE were not the same thing
     h_module = NULL;
@@ -84,7 +84,7 @@ bool window::create_window(const int px, const int py, const int width, const in
         NULL,
         NULL,
         h_module,
-        NULL
+        state
         );
 
     if (h_wnd == nullptr)
@@ -117,75 +117,78 @@ void window::resize_window(int width, int height)
 
 bool window::init_opengl(const int major, const int minor)
 {
-    HWND dummy_window = CreateWindowA(
-        class_name, "Dummy Window",
+    HWND tmp_window = CreateWindowA(
+        class_name, "Temporary Window",
         WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
         0, 0,
         1, 1,
         NULL, NULL,
         h_module, NULL);
 
-    if (dummy_window == nullptr)
-    {
-        return false;
-    }
- 
-    HDC dummy_device_context = GetDC(dummy_window);
+    HDC tmp_window_context = GetDC(tmp_window);
 
-    PIXELFORMATDESCRIPTOR dummy_pxlf_desc = {};
-    dummy_pxlf_desc.nSize = sizeof(dummy_pxlf_desc);
-    dummy_pxlf_desc.nVersion = 1;
-    dummy_pxlf_desc.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
-    dummy_pxlf_desc.iPixelType = PFD_TYPE_RGBA;
-    dummy_pxlf_desc.cColorBits = 32;
-    dummy_pxlf_desc.cAlphaBits = 8;
-    dummy_pxlf_desc.cDepthBits = 24;
+    PIXELFORMATDESCRIPTOR tmp_pixel_format_desc = {};
+    tmp_pixel_format_desc.nSize = sizeof(tmp_pixel_format_desc);
+    tmp_pixel_format_desc.nVersion = 1;
+    tmp_pixel_format_desc.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+    tmp_pixel_format_desc.iPixelType = PFD_TYPE_RGBA;
+    tmp_pixel_format_desc.cColorBits = 24;
+    tmp_pixel_format_desc.cAlphaBits = 8;
+    tmp_pixel_format_desc.cDepthBits = 24;
     
-    int dummy_pxlf_desc_id = ChoosePixelFormat(dummy_device_context, &dummy_pxlf_desc);
+    int tmp_pixel_format_desc_id = ChoosePixelFormat(tmp_window_context, &tmp_pixel_format_desc);
 
-    if (dummy_pxlf_desc_id == 0) 
+    if (tmp_pixel_format_desc_id == 0) 
     {
         return false;
     }
 
-    // Not sure if this is needed but invoke anyway, as it seems to add more data to struct
-    if (!DescribePixelFormat(dummy_device_context, dummy_pxlf_desc_id, 
-                             dummy_pxlf_desc.nSize, &dummy_pxlf_desc))
+    // Not sure if this is needed but invoked anyway, as it seems to add more data to struct
+    if (!DescribePixelFormat(tmp_window_context, tmp_pixel_format_desc_id, 
+                             tmp_pixel_format_desc.nSize, &tmp_pixel_format_desc))
     {
         return false;
     }
 
-    if (!SetPixelFormat(dummy_device_context, dummy_pxlf_desc_id, &dummy_pxlf_desc))
+    if (!SetPixelFormat(tmp_window_context, tmp_pixel_format_desc_id, &tmp_pixel_format_desc))
     {
         return false;
     }
 
-    HGLRC dummy_render_context = wglCreateContext(dummy_device_context);
+    HGLRC tmp_render_context = wglCreateContext(tmp_window_context);
 
-    if (dummy_render_context == nullptr) 
+    if (tmp_render_context == nullptr) 
     {
         return false;
     }
 
-    wglMakeCurrent(dummy_device_context, dummy_render_context);
+    wglMakeCurrent(tmp_window_context, tmp_render_context);
 
-    PFNWGLCHOOSEPIXELFORMATARBPROC wglChoosePixelFormatARB = nullptr;
-    wglChoosePixelFormatARB = reinterpret_cast<PFNWGLCHOOSEPIXELFORMATARBPROC>(wglGetProcAddress("wglChoosePixelFormatARB"));
+    auto wglChoosePixelFormatARB = (PFNWGLCHOOSEPIXELFORMATARBPROC)(wglGetProcAddress("wglChoosePixelFormatARB"));
 
     if (wglChoosePixelFormatARB == nullptr) 
     {
         return false;
     }
     
-    PFNWGLCREATECONTEXTATTRIBSARBPROC wglCreateContextAttribsARB = nullptr;
-    wglCreateContextAttribsARB = reinterpret_cast<PFNWGLCREATECONTEXTATTRIBSARBPROC>(wglGetProcAddress("wglCreateContextAttribsARB"));
+    auto wglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)(wglGetProcAddress("wglCreateContextAttribsARB"));
 
     if (wglCreateContextAttribsARB == nullptr) 
     {
         return false;
     }
 
-    const int pixelAttribs[] = 
+    wglMakeCurrent(NULL, NULL);
+    wglDeleteContext(tmp_render_context);
+    ReleaseDC(tmp_window, tmp_window_context);
+    DestroyWindow(tmp_window);
+
+    /*
+    Create the OpenGL context we wil be taking forward
+    */
+    device_context = GetDC(h_wnd);
+
+    const int pixel_attribs[] = 
     {
         WGL_DRAW_TO_WINDOW_ARB, GL_TRUE,
         WGL_SUPPORT_OPENGL_ARB, GL_TRUE,
@@ -201,42 +204,36 @@ bool window::init_opengl(const int major, const int minor)
         0
     };
     
-    int pixel_format_id; UINT num_formats;
-
-    device_context = GetDC(h_wnd);
+    int pixel_format_ID; 
+    UINT num_formats;
 
     bool status = wglChoosePixelFormatARB(
-        device_context, pixelAttribs, 
+        device_context, pixel_attribs, 
         NULL, 1, 
-        &pixel_format_id, &num_formats);
+        &pixel_format_ID, &num_formats);
     
     if (status == false || num_formats == 0) 
     {
         return false;
     }
 
-    PIXELFORMATDESCRIPTOR pixel_format_desc;
-    DescribePixelFormat(device_context, pixel_format_id, sizeof(pixel_format_desc), &pixel_format_desc);
-    SetPixelFormat(device_context, pixel_format_id, &pixel_format_desc);
+    PIXELFORMATDESCRIPTOR pixel_Format_Desc;
+    DescribePixelFormat(device_context, pixel_format_ID, sizeof(pixel_Format_Desc), &pixel_Format_Desc);
+    SetPixelFormat(device_context, pixel_format_ID, &pixel_Format_Desc);
 
-    int  contextAttribs[] = {
+    int  context_attribs[] = {
         WGL_CONTEXT_MAJOR_VERSION_ARB, major,
         WGL_CONTEXT_MINOR_VERSION_ARB, minor,
         WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
         0
     };
     
-    HGLRC renderContext = wglCreateContextAttribsARB(device_context, 0, contextAttribs);
+    render_context = wglCreateContextAttribsARB(device_context, 0, context_attribs);
     
-    if (renderContext == nullptr) 
+    if (render_context == nullptr) 
     {
         return false;
     }
-
-    wglMakeCurrent(NULL, NULL);
-    wglDeleteContext(dummy_render_context);
-    ReleaseDC(dummy_window, dummy_device_context);
-    DestroyWindow(dummy_window);
 
     if (!wglMakeCurrent(device_context, render_context)) 
     {

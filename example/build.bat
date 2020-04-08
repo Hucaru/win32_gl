@@ -11,8 +11,8 @@ call %VSTOOLS%
 
 :: Compile options
 set COMPILER_FLAGS=/Zi /Fe: example.exe /FC /EHsc
-set INCLUDE_DIR=/I..\include\
-set CPP_FILES=main.cpp
+set INCLUDE_DIR=/I..\include\ /I.
+set CPP_FILES=main.cpp glad.c draw.cpp
 set LIBS= Opengl32.lib User32.lib Gdi32.lib
 
 :: Compile
