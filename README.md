@@ -1,5 +1,5 @@
 # win32_gl
-Single file header only library for opening an opengl context and window on win32
+Header file only library for opening an opengl context and window on win32
 
 ## Usage
 See example folder on how to use the header file, as well as how to use Glad to load OpenGL functions
